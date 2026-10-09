@@ -3,20 +3,30 @@ import json
 
 import boto3
 import pytest
+from botocore.exceptions import ClientError
 from moto import mock_aws
 
 import scanner
 
 REGIAO = "us-east-1"
+BLOQUEIO_COMPLETO = {
+    "BlockPublicAcls": True,
+    "IgnorePublicAcls": True,
+    "BlockPublicPolicy": True,
+    "RestrictPublicBuckets": True,
+}
 
 
 @pytest.fixture(autouse=True)
-def aws_falsa(monkeypatch):
+def aws_falsa(monkeypatch, tmp_path):
     # Credenciais falsas: se algum teste escapar do moto, a AWS real recusa em vez de usar as suas.
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "teste")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "teste")
     monkeypatch.setenv("AWS_DEFAULT_REGION", REGIAO)
     monkeypatch.delenv("AWS_PROFILE", raising=False)
+    # Aponta para arquivos que não existem: os testes nunca leem o seu ~/.aws de verdade.
+    monkeypatch.setenv("AWS_CONFIG_FILE", str(tmp_path / "config"))
+    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(tmp_path / "credentials"))
     with mock_aws():
         yield
 
@@ -79,15 +89,7 @@ def test_usuario_sem_senha_de_console_e_ignorado():
 def test_bucket_com_bloqueio_completo_passa():
     s3 = boto3.client("s3")
     s3.create_bucket(Bucket="seguro")
-    s3.put_public_access_block(
-        Bucket="seguro",
-        PublicAccessBlockConfiguration={
-            "BlockPublicAcls": True,
-            "IgnorePublicAcls": True,
-            "BlockPublicPolicy": True,
-            "RestrictPublicBuckets": True,
-        },
-    )
+    s3.put_public_access_block(Bucket="seguro", PublicAccessBlockConfiguration=BLOQUEIO_COMPLETO)
     assert scanner.checar_s3_bloqueio_publico(s3)[0].ok
 
 
@@ -103,13 +105,7 @@ def test_bucket_com_bloqueio_parcial_falha_e_diz_o_que_falta():
     s3 = boto3.client("s3")
     s3.create_bucket(Bucket="meio-seguro")
     s3.put_public_access_block(
-        Bucket="meio-seguro",
-        PublicAccessBlockConfiguration={
-            "BlockPublicAcls": True,
-            "IgnorePublicAcls": True,
-            "BlockPublicPolicy": False,
-            "RestrictPublicBuckets": True,
-        },
+        Bucket="meio-seguro", PublicAccessBlockConfiguration={**BLOQUEIO_COMPLETO, "BlockPublicPolicy": False}
     )
     achado = scanner.checar_s3_bloqueio_publico(s3)[0]
     assert not achado.ok
@@ -158,3 +154,23 @@ def test_main_gera_json_e_sai_com_codigo_1_quando_ha_falha(tmp_path, capsys):
     assert {"checagem": "s3_bloqueio_publico", "recurso": "bucket exposto", "ok": False,
             "detalhe": "Bucket sem bloqueio de acesso público configurado"} in relatorio
     assert "falha(s)" in capsys.readouterr().out
+
+
+def test_main_sai_com_codigo_0_quando_esta_tudo_certo(monkeypatch):
+    monkeypatch.setattr(scanner, "escanear", lambda sessao: [scanner.Achado("teste", "conta", True, "ok")])
+    assert scanner.main([]) == 0
+
+
+def test_erro_da_aws_vira_mensagem_e_codigo_2(monkeypatch, capsys):
+    def sem_permissao(sessao):
+        resposta = {"Error": {"Code": "AccessDenied", "Message": "Access Denied"}}
+        raise ClientError(resposta, "ListBuckets")
+
+    monkeypatch.setattr(scanner, "escanear", sem_permissao)
+    assert scanner.main([]) == 2
+    assert "Erro ao consultar a AWS" in capsys.readouterr().err
+
+
+def test_perfil_inexistente_vira_mensagem_e_codigo_2(capsys):
+    assert scanner.main(["--perfil", "perfil-que-nao-existe"]) == 2
+    assert "perfil-que-nao-existe" in capsys.readouterr().err

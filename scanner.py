@@ -14,7 +14,7 @@ import sys
 from dataclasses import asdict, dataclass
 
 import boto3
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 
 
 @dataclass
@@ -62,7 +62,9 @@ def _tem_senha_de_console(iam, nome: str) -> bool:
 def checar_s3_bloqueio_publico(s3) -> list[Achado]:
     """Sem o bloqueio de acesso público, uma permissão errada pode expor o bucket na internet."""
     achados = []
-    for bucket in s3.list_buckets()["Buckets"]:
+    # Paginador também aqui: a conta pode ter mais buckets do que cabem numa resposta.
+    buckets = (b for pagina in s3.get_paginator("list_buckets").paginate() for b in pagina["Buckets"])
+    for bucket in buckets:
         nome = bucket["Name"]
         try:
             config = s3.get_public_access_block(Bucket=nome)["PublicAccessBlockConfiguration"]
@@ -101,8 +103,10 @@ def escanear(sessao: boto3.Session) -> list[Achado]:
 
 
 def imprimir(achados: list[Achado]) -> None:
+    # Largura pela maior linha: nomes de bucket chegam a 63 caracteres e desalinhavam a tabela.
+    largura = max(len(a.recurso) for a in achados)
     for a in achados:
-        print(f"[{'OK   ' if a.ok else 'FALHA'}] {a.checagem:<20} {a.recurso:<30} {a.detalhe}")
+        print(f"[{'OK   ' if a.ok else 'FALHA'}] {a.checagem:<20} {a.recurso:<{largura}}  {a.detalhe}")
     falhas = sum(not a.ok for a in achados)
     print(f"\n{len(achados)} verificações, {falhas} falha(s).")
 
@@ -114,8 +118,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", metavar="ARQUIVO", help="também salva o relatório neste arquivo JSON")
     args = parser.parse_args(argv)
 
-    sessao = boto3.Session(profile_name=args.perfil, region_name=args.regiao)
-    achados = escanear(sessao)
+    try:
+        sessao = boto3.Session(profile_name=args.perfil, region_name=args.regiao)
+        achados = escanear(sessao)
+    except (BotoCoreError, ClientError) as erro:
+        # Sem credenciais, sem região, perfil inexistente ou sem permissão: uma mensagem, não um traceback.
+        print(f"Erro ao consultar a AWS: {erro}", file=sys.stderr)
+        return 2
     imprimir(achados)
 
     if args.json:
@@ -123,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
             json.dump([asdict(a) for a in achados], arquivo, ensure_ascii=False, indent=2)
         print(f"Relatório salvo em {args.json}")
 
-    # Código de saída 1 quando há falha: permite usar o scanner num pipeline de CI.
+    # Códigos de saída: 0 tudo certo, 1 há falhas, 2 o scan não rodou. Permite usar o scanner num pipeline de CI.
     return 1 if any(not a.ok for a in achados) else 0
 
 

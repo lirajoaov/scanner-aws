@@ -17,18 +17,26 @@ Executado contra uma conta **simulada** (com o [moto](https://github.com/getmoto
 
 ```
 $ python scanner.py
-[FALHA] mfa_root             conta root                     A conta root está sem MFA
-[OK   ] mfa_usuario          usuário ana                    MFA ativo
-[FALHA] mfa_usuario          usuário bruno                  Entra no console sem MFA
-[OK   ] s3_bloqueio_publico  bucket empresa-backups         Bloqueio de acesso público completo
-[FALHA] s3_bloqueio_publico  bucket empresa-site            Opções desligadas: BlockPublicPolicy
-[FALHA] s3_bloqueio_publico  bucket empresa-temp            Bucket sem bloqueio de acesso público configurado
-[FALHA] cloudtrail           conta                          Nenhum trail ativo cobrindo todas as regiões
+[FALHA] mfa_root             conta root              A conta root está sem MFA
+[OK   ] mfa_usuario          usuário ana             MFA ativo
+[FALHA] mfa_usuario          usuário bruno           Entra no console sem MFA
+[OK   ] s3_bloqueio_publico  bucket empresa-backups  Bloqueio de acesso público completo
+[FALHA] s3_bloqueio_publico  bucket empresa-site     Opções desligadas: BlockPublicPolicy
+[FALHA] s3_bloqueio_publico  bucket empresa-temp     Bucket sem bloqueio de acesso público configurado
+[FALHA] cloudtrail           conta                   Nenhum trail ativo cobrindo todas as regiões
 
 7 verificações, 5 falha(s).
 ```
 
-Com `--json relatorio.json`, o mesmo resultado é salvo em JSON. O script termina com código de saída 1 quando há falha, o que permite usá-lo num pipeline de CI.
+Com `--json relatorio.json`, o mesmo resultado é salvo em JSON.
+
+O código de saída permite usar o scanner num pipeline de CI:
+
+| Código | Significado |
+|---|---|
+| 0 | Todas as checagens passaram |
+| 1 | Pelo menos uma checagem falhou |
+| 2 | O scan não rodou (sem credenciais, sem região, perfil inexistente ou sem permissão) |
 
 ## Como rodar
 
@@ -97,8 +105,8 @@ O GitHub Actions roda os testes a cada push.
 
 - **`boto3`** é a biblioteca oficial da AWS para Python. Cada checagem faz à API as mesmas perguntas que você faria no console ("liste os buckets", "este usuário tem MFA?").
 - Cada checagem é uma função que recebe um cliente da AWS e devolve uma lista de `Achado` (checagem, recurso, ok, detalhe). Isso deixa cada regra pequena, independente e fácil de testar.
-- **Paginação:** a lista de usuários usa um *paginator*, porque a API devolve no máximo 100 por vez.
-- **Erros:** se faltar permissão para ler um bucket, o script para com o erro da AWS em vez de relatar "falha", que seria uma informação errada.
+- **Paginação:** usuários e buckets são lidos com *paginators*, porque a API devolve um número limitado de itens por resposta.
+- **Erros:** se faltar permissão para ler um recurso, o scan para com uma mensagem e o código 2, em vez de marcar "falha", que seria uma informação errada.
 
 ## Limitações conhecidas
 
