@@ -38,9 +38,9 @@ O código de saída permite usar o scanner num pipeline de CI:
 | 1 | Pelo menos uma checagem falhou |
 | 2 | O scan não rodou (sem credenciais, sem região, perfil inexistente ou sem permissão) |
 
-## Como rodar
+## Como rodar? :)
 
-Requer Python 3.10 ou mais novo.
+Requer Python 3.10 ou mais recente!
 
 ```bash
 python -m venv .venv
@@ -58,7 +58,7 @@ aws sso login --profile auditoria
 python scanner.py --perfil auditoria
 ```
 
-Evite chaves de acesso de longa duração guardadas em arquivo: esse é justamente o tipo de risco que um scanner de segurança deveria apontar.
+Evite chaves de acesso de longa duração guardadas em arquivo: esse é justamente o tipo de risco que um scanner de segurança busca apontar! ;)
 
 A identidade usada precisa apenas destas permissões de leitura (ou da política gerenciada `SecurityAudit`, da AWS, que é mais ampla):
 
