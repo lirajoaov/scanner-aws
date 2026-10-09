@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+# Relatórios de contas reais revelam nomes de usuários e buckets: não vão para o GitHub.
+relatorio*.json

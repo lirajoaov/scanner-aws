@@ -1,0 +1,4 @@
+[tool.pytest.ini_options]
+# Permite que os testes façam "import scanner" a partir da raiz do projeto.
+pythonpath = ["."]
+testpaths = ["tests"]

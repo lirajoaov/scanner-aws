@@ -1,0 +1,4 @@
+# Só para os testes: o moto simula a AWS localmente.
+-r requirements.txt
+moto[iam,s3,cloudtrail]==5.2.3
+pytest==9.1.1
